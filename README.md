@@ -11,7 +11,7 @@
 > `Contents/Resources/wechat.dylib`. **This fork does**: it locates the 4.x patch points, verifies the original
 > bytes before writing anything, and re-signs the bundle **keeping its entitlements** (a bare
 > `codesign --deep --sign -` strips them, and WeChat then refuses to launch on any machine with SIP on).
-> Anti-recall + auto-updater block, WeChat builds `268575` → `269627`.
+> Anti-recall + auto-updater block for selected WeChat builds through `269631` (4.x patches: arm64).
 > Prefer a GUI? → **[Unrevoke](https://github.com/zengtianli/WeChatUnrevoke)**.
 
 ---
@@ -30,7 +30,7 @@
 > **本 fork 与上游的关系**：上游 [sunnyyoung/WeChatTweak](https://github.com/sunnyyoung/WeChatTweak)
 > （13.8k★、1.6k fork）**最后一次提交停在 2026 年 2 月**，而微信 4.x 把撤回逻辑整体搬进了
 > `Contents/Resources/wechat.dylib`，它知道的补丁点全部失效。本 fork 从 4.1.10（build 268880）接上，
-> 现已覆盖到 **build 269627**，并且：
+> 现已收录至 **build 269631**（并非覆盖期间每一个构建号，4.x 补丁为 arm64），并且：
 >
 > - 支持**按目标 dylib** 打补丁（4.x 的逻辑不在主程序里了）
 > - **写入前校验原始字节** —— 打错版本直接报错，不会盲写把微信弄坏
@@ -39,7 +39,7 @@
 
 ## 功能
 
-| 功能 | 说明 | 微信 3.8.x | 微信 4.x (268880 → 269627) |
+| 功能 | 说明 | 微信 3.8.x | 微信 4.x（已收录构建，至 269631） |
 | --- | --- | :---: | :---: |
 | **防撤回（静默变体）** | 别人撤回的消息原样留在聊天里，不弹提示 | ✓ | ✓（当前发布版） |
 | **防撤回（留提示变体）** | 消息留着 **且** 仍显示「对方撤回了一条消息」提示 | ✓ | ⚠️（`--variant keeptip`：**私聊**有提示；**群聊**仍静默无提示） |
@@ -58,8 +58,13 @@
 
 工具按 **构建号**（`CFBundleVersion`，即 `wechattweak versions` 打印的数字）匹配，不是营销版本号。
 
+当前适配以**微信官网最新稳定版**为准。2026-09-12 核对腾讯更新源为 **4.1.13.63（build 269631）**，已提供 Apple Silicon（arm64）补丁。尚未收录的旧构建（例如 269602）建议从[微信官网](https://mac.weixin.qq.com/)更新到这版，再重新打补丁；已收录旧构建的配置继续保留。官网版和 App Store 版即使都显示 4.1.13，也必须分别核对构建号，不能互套地址。
+
+269631 的定位样本来自[腾讯官方安装包](https://dldir1.qq.com/weixin/Universal/Mac/xWeChatMac_universal_4.1.13.63_269631.dmg)，SHA-256 为 `b247b2cc9dd2122024d6facf9f3c464f2564f106266851d439853bacc7013de9`。使用 GUI 的用户联网退出并重开 WeChatUnrevoke 即可刷新补丁库，无需为此次配置更新重新安装 GUI。微信升级会清除补丁，升级后仍需重新开启并检查保护。
+
 | 构建号 | 微信版本 | 防撤回 | 阻止自动更新 |
 | --- | --- | :---: | :---: |
+| 269631 | 4.1.13.63 官网版，arm64 | ✓（原版副本已验证默认 keeptip 写入、体检和还原；真实聊天撤回待用户实测） | ✓（8 处原始字节已核对，写入后体检通过） |
 | 269627 | 4.1.13 | ✓（本机已打，补丁点由 `tools/locate_revoke.py` 定位） | ✓（`tools/locate_update.py` 定位，8 处） |
 | 269626 | 4.1.13 | ✓（本机实测） | —（该构建已被 269627 替代，未收录） |
 | 269579 | 4.1.13 | ✓ | ✓ |
