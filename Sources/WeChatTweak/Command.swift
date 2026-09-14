@@ -125,7 +125,11 @@ struct Command {
             }
         }
 
-        var patched: [String] = []
+        // A 4.x configuration can contain several logical targets in one dylib.
+        // Coalesce them so Patcher verifies every address before changing any
+        // byte in that image (269602 keeptip + multi-instance is one example).
+        var entriesByBinary: [String: [Config.Entry]] = [:]
+        var binaryOrder: [String] = []
         for target in targets {
             if !blockUpdate && Command.isUpdateTarget(target.identifier) {
                 print("------ Target: \(target.identifier) skipped (--no-block-update) ------")
@@ -144,10 +148,16 @@ struct Command {
 
             let relative = target.binary ?? Command.defaultBinary
             print("------ Target: \(target.identifier) (\(relative)) ------")
-            try Patcher.patch(binary: app.appendingPathComponent(relative), entries: target.entries)
-            if !patched.contains(relative) {
-                patched.append(relative)
+            if entriesByBinary[relative] == nil {
+                binaryOrder.append(relative)
             }
+            entriesByBinary[relative, default: []].append(contentsOf: target.entries)
+        }
+
+        var patched: [String] = []
+        for relative in binaryOrder {
+            try Patcher.patch(binary: app.appendingPathComponent(relative), entries: entriesByBinary[relative]!)
+            patched.append(relative)
         }
         return patched
     }

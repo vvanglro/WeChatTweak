@@ -31,6 +31,24 @@ final class PatcherTests: XCTestCase {
         XCTAssertEqual(try MachOFixture.word(at: plant, in: url), MachOFixture.word("DEADBEEF"))
     }
 
+    func testLaterExpectedMismatchDoesNotPartiallyApplyEarlierEntry() throws {
+        let url = try MachOFixture.write(size: size, words: [
+            plant: MachOFixture.word("40100034"),
+            plant + 4: MachOFixture.word("DEADBEEF"),
+        ])
+        defer { try? FileManager.default.removeItem(at: url) }
+        let good = try Config.Entry(arch: .arm64, addr: va, asmHex: "82000014", expectedHex: ["40100034"])
+        let bad = try Config.Entry(arch: .arm64, addr: va + 4, asmHex: "C0035FD6", expectedHex: ["FC6FBBA9"])
+
+        XCTAssertThrowsError(try Patcher.patch(binary: url, entries: [good, bad])) { error in
+            guard case Patcher.Error.expectedMismatch = error else {
+                return XCTFail("expected expectedMismatch, got \(error)")
+            }
+        }
+        XCTAssertEqual(try MachOFixture.word(at: plant, in: url), MachOFixture.word("40100034"))
+        XCTAssertEqual(try MachOFixture.word(at: plant + 4, in: url), MachOFixture.word("DEADBEEF"))
+    }
+
     /// `expected` may list several accepted states (pristine + already-silent) — keeptip's first entry relies on it.
     func testExpectedAcceptsAnyListedVariant() throws {
         let url = try MachOFixture.write(size: size, words: [plant: MachOFixture.word("82000014")])

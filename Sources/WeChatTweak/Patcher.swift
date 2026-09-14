@@ -59,15 +59,22 @@ struct Patcher {
         let fh = try open(binary, writable: true)
         defer { try? fh.close() }
 
-        var patchedCount = 0
+        var plans: [(sliceOffset: UInt64, entry: Config.Entry)] = []
         for (cputype, sliceOffset) in try slices(fh) {
             for entry in entries where entry.arch.cpu == cputype {
-                try patchOne(file: fh, sliceOffset: sliceOffset, entry: entry)
-                patchedCount += 1
+                plans.append((sliceOffset, entry))
             }
         }
-        if patchedCount <= 0 {
-            throw Error.noArchMatched
+        guard !plans.isEmpty else { throw Error.noArchMatched }
+
+        // Check every target before the first write. This prevents a malformed
+        // config or wrong build at a later address from leaving an earlier
+        // 269602 revoke/multi-instance target half-applied.
+        for plan in plans {
+            try validateOne(file: fh, sliceOffset: plan.sliceOffset, entry: plan.entry)
+        }
+        for plan in plans {
+            try patchOne(file: fh, sliceOffset: plan.sliceOffset, entry: plan.entry)
         }
     }
 
@@ -204,5 +211,22 @@ struct Patcher {
 
         try fh.seek(toOffset: fileOffset)
         try fh.write(contentsOf: entry.asm)
+    }
+
+    /// Read-only half of `patchOne`, used to guarantee all expected-byte gates
+    /// pass before `patch` writes its first byte.
+    private static func validateOne(file fh: FileHandle, sliceOffset: UInt64, entry: Config.Entry) throws {
+        let archName = entry.arch.rawValue
+        let fileOffset = try fileOffset(in: fh, sliceOffset: sliceOffset, va: entry.addr, arch: archName)
+        try fh.seek(toOffset: fileOffset)
+        let current = try fh.read(upToCount: entry.asm.count) ?? Data()
+        if current != entry.asm, !entry.expected.isEmpty, !entry.expected.contains(current) {
+            throw Error.expectedMismatch(
+                arch: archName,
+                va: entry.addr,
+                found: current.map { String(format: "%02X", $0) }.joined(),
+                want: entry.expected.map { $0.map { String(format: "%02X", $0) }.joined() }
+            )
+        }
     }
 }
