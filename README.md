@@ -1,5 +1,7 @@
 # WeChatTweak
 
+**中文** | [English](README_EN.md)
+
 [![GitHub](https://img.shields.io/badge/GitHub-black?logo=github&logoColor=white)](https://github.com/zengtianli/WeChatTweak)
 [![Upstream](https://img.shields.io/badge/Upstream-sunnyyoung-blue?logo=github&logoColor=white)](https://github.com/sunnyyoung/WeChatTweak)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-green)](LICENSE)
