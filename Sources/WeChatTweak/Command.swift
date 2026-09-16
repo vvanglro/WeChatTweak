@@ -20,10 +20,8 @@ struct Command {
                 return "executing: \(command) error: \(error)"
             case let .keeptipUnavailable(version):
                 return """
-                    config.json has no `revoke-keeptip` patch point for WeChat build \(version) yet \
-                    (this is missing data, not an unsupported build — the keeptip point is derivable \
-                    from the silent one by its generation's fixed delta).
-                    Either let the tool find it itself:
+                    config.json has no `revoke-keeptip` patch point for WeChat build \(version) yet.
+                    On a matching parseRevokeXML signature, let the tool find it itself:
                         sudo wechattweak patch --variant keeptip --auto-locate
                     or curate it into config.json first:
                         python3 tools/locate_revoke.py --append && swift build -c release
@@ -125,9 +123,9 @@ struct Command {
             }
         }
 
-        // A 4.x configuration can contain several logical targets in one dylib.
-        // Coalesce them so Patcher verifies every address before changing any
-        // byte in that image (269602 keeptip + multi-instance is one example).
+        // Coalesce entries by image. In particular, 269602's revoke and
+        // multi-instance changes share wechat.dylib, so Patcher can validate
+        // both before writing either one.
         var entriesByBinary: [String: [Config.Entry]] = [:]
         var binaryOrder: [String] = []
         for target in targets {
@@ -156,7 +154,9 @@ struct Command {
 
         var patched: [String] = []
         for relative in binaryOrder {
-            try Patcher.patch(binary: app.appendingPathComponent(relative), entries: entriesByBinary[relative]!)
+            try Patcher.patch(binary: app.appendingPathComponent(relative),
+                              entries: entriesByBinary[relative]!,
+                              backupVersion: config.version)
             patched.append(relative)
         }
         return patched
@@ -183,7 +183,8 @@ struct Command {
             throw Error.restoreUnavailable(version: config.version, targets: missing)
         }
 
-        var patched: [String] = []
+        var entriesByBinary: [String: [Config.Entry]] = [:]
+        var binaryOrder: [String] = []
         for target in config.targets {
             let relative = target.binary ?? Command.defaultBinary
             let inverted = try target.entries.map { entry -> Config.Entry in
@@ -197,10 +198,39 @@ struct Command {
                 return try Config.Entry(arch: entry.arch, addr: entry.addr, asmHex: pristine.hexString, expectedHex: unique)
             }
             print("------ Restore: \(target.identifier) (\(relative)) ------")
-            try Patcher.patch(binary: app.appendingPathComponent(relative), entries: inverted)
-            if !patched.contains(relative) {
-                patched.append(relative)
+            if entriesByBinary[relative] == nil {
+                binaryOrder.append(relative)
             }
+            var combined = entriesByBinary[relative, default: []]
+            for entry in inverted {
+                // `revoke` and `revoke-keeptip` deliberately restore their
+                // shared selector to the same pristine bytes. Merge that one
+                // range so Patcher can still reject genuinely overlapping
+                // writes while restoring either variant in one transaction.
+                if let index = combined.firstIndex(where: {
+                    $0.arch.rawValue == entry.arch.rawValue && $0.addr == entry.addr && $0.asm == entry.asm
+                }) {
+                    var seen = Set<String>()
+                    let expected = (combined[index].expected + entry.expected)
+                        .map(\.hexString)
+                        .filter { seen.insert($0).inserted }
+                    combined[index] = try Config.Entry(arch: entry.arch,
+                                                       addr: entry.addr,
+                                                       asmHex: entry.asm.hexString,
+                                                       expectedHex: expected)
+                } else {
+                    combined.append(entry)
+                }
+            }
+            entriesByBinary[relative] = combined
+        }
+
+        var patched: [String] = []
+        for relative in binaryOrder {
+            // Restoring uses expected originals already captured in config.json;
+            // it must not create a new backup of the patched image.
+            try Patcher.patch(binary: app.appendingPathComponent(relative), entries: entriesByBinary[relative]!)
+            patched.append(relative)
         }
         return patched
     }

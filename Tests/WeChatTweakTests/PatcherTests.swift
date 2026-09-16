@@ -31,6 +31,9 @@ final class PatcherTests: XCTestCase {
         XCTAssertEqual(try MachOFixture.word(at: plant, in: url), MachOFixture.word("DEADBEEF"))
     }
 
+    /// Multi-point patches must finish planning before any byte is changed. 269602
+    /// applies revoke and multi-instance stubs to the same dylib, so this prevents a
+    /// later mismatch from leaving only the earlier point modified.
     func testLaterExpectedMismatchDoesNotPartiallyApplyEarlierEntry() throws {
         let url = try MachOFixture.write(size: size, words: [
             plant: MachOFixture.word("40100034"),
